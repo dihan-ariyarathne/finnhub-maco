@@ -1,0 +1,63 @@
+name: Build & Deploy to Google Cloud
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Auth to GCP via SA key in repo secret GCP_SA_KEY
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          export_default_credentials: true
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+
+      # Build Docker image with Cloud Build
+      - name: Build image
+        run: gcloud builds submit --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app
+
+      # Deploy Streamlit to Cloud Run
+      - name: Deploy Cloud Run
+        run: |
+          gcloud run deploy finnhub-mac-app \
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
+            --region ${{ secrets.GCP_REGION }} \
+            --allow-unauthenticated \
+            --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
+            --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest
+
+      # Deploy daily updater (Cloud Functions Gen2)
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy finnhub-daily-updater \
+            --gen2 --region=${{ secrets.GCP_REGION }} --runtime=python311 \
+            --source=gcp/function_update \
+            --entry-point=run_update \
+            --trigger-http --allow-unauthenticated \
+            --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
+            --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest
+
+      # Ensure Cloud Scheduler hits it daily 01:00 UTC
+      - name: Ensure Scheduler
+        shell: bash
+        run: |
+          FN_URL=$(gcloud functions describe finnhub-daily-updater --region=${{ secrets.GCP_REGION }} --format="value(serviceConfig.uri)")
+          gcloud scheduler jobs describe finnhub-daily >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
+          if [ "$EXISTS" -eq 0 ]; then
+            gcloud scheduler jobs create http finnhub-daily \
+              --schedule="0 1 * * *" --time-zone="UTC" \
+              --uri="$FN_URL" --http-method=GET
+          else
+            gcloud scheduler jobs update http finnhub-daily \
+              --schedule="0 1 * * *" --time-zone="UTC" \
+              --uri="$FN_URL" --http-method=GET
+          fi
+
+      - name: Show App URL
+        run: gcloud run services describe finnhub-mac-app --region=${{ secrets.GCP_REGION }} --format="value(status.url)"

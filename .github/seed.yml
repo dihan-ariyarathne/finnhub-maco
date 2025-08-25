@@ -1,0 +1,24 @@
+name: Seed Historical Data
+on: { workflow_dispatch: {} }
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          export_default_credentials: true
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+      - name: Run seed
+        env:
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_DIRECT_KEY }}  # optional direct secret; else pull from Secret Manager below
+        run: |
+          # If you prefer Secret Manager for the key instead, uncomment:
+          # export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
+          python pipeline/fetch_historical.py
