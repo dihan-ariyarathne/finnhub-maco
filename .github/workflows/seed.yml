@@ -29,9 +29,19 @@ jobs:
         env:
           GCS_BUCKET: ${{ secrets.GCS_BUCKET }}   # where CSVs go
         run: |
-          # Make 'pipeline' imports work
-          export PYTHONPATH="$GITHUB_WORKSPACE"
-          # Pull Finnhub key from Secret Manager
-          export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
-          # Run as a module
-          python -m pipeline.fetch_historical
+           # 1) Ensure imports work
+           export PYTHONPATH="$GITHUB_WORKSPACE"
+
+           # 2) Fetch key from Secret Manager
+           export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
+
+           # 3) Sanity: print key length only (masked), fail if empty
+           echo "Key length: ${#FINNHUB_API_KEY}"
+           test ${#FINNHUB_API_KEY} -gt 20 || { echo "Key missing/too short"; exit 1; }
+
+           # 4) API smoke test (should be JSON with price fields)
+           RESP=$(curl -s "https://finnhub.io/api/v1/quote?symbol=AAPL&token=${FINNHUB_API_KEY}")
+           echo "$RESP" | grep -qi '"error"' && { echo "Finnhub auth failed"; exit 1; }
+
+           # 5) Run the seeder as a module
+           python -m pipeline.fetch_historical
