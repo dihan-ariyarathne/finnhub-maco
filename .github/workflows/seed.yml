@@ -20,5 +20,5 @@ jobs:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_DIRECT_KEY }}  # optional direct secret; else pull from Secret Manager below
         run: |
           # If you prefer Secret Manager for the key instead, uncomment:
-          # export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
-          python pipeline/fetch_historical.py
+          export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
+          python -m pipeline.fetch_historical

@@ -37,7 +37,7 @@ jobs:
         run: |
           gcloud functions deploy finnhub-daily-updater \
             --gen2 --region=${{ secrets.GCP_REGION }} --runtime=python311 \
-            --source=gcp/function_update \
+            --source=. \
             --entry-point=run_update \
             --trigger-http --allow-unauthenticated \
             --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
