@@ -16,9 +16,13 @@ jobs:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
       - name: Run seed
         env:
-          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_DIRECT_KEY }}  # optional direct secret; else pull from Secret Manager below
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}       # where CSVs go
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}  # Finnhub API key  
         run: |
-          # If you prefer Secret Manager for the key instead, uncomment:
+          # Put repo root on import path (so "pipeline" resolves)
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          # Pull Finnhub key from Secret Manager into env
           export FINNHUB_API_KEY=$(gcloud secrets versions access latest --secret=${{ secrets.FINNHUB_SECRET_NAME }})
+          # Run as a module (package-aware)
           python -m pipeline.fetch_historical
+
