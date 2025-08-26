@@ -35,12 +35,13 @@ jobs:
       # Deploy Streamlit to Cloud Run
       - name: Deploy Cloud Run (Streamlit app)
         run: |
-          gcloud run deploy finnhub-mac-app \
-            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
-            --region ${{ secrets.GCP_REGION }} \
-            --allow-unauthenticated \
-            --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
-            --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest \
+          gcloud run deploy finnhub-mac-app ^
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app ^
+            --region ${{ secrets.GCP_REGION }} ^
+            --allow-unauthenticated ^
+            --service-account ${{ secrets.RUN_SA_EMAIL }} ^    REM <<< important
+            --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} ^
+            --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest ^
             --min-instances=0 --max-instances=3 --concurrency=10 --memory=1Gi --cpu=1 --timeout=900
 
       # Deploy Cloud Function (deploy from repo root so pipeline/ is included)
