@@ -25,9 +25,9 @@ jobs:
       # Build the container (points to your Dockerfile path)
       - name: Build image
         run: |
+          # Cloud Build will auto-pick ./Dockerfile at repo root
           gcloud builds submit \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
-            --file gcp/cloud_run.Dockerfile .
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app .
 
       # Deploy Streamlit to Cloud Run
       - name: Deploy Cloud Run (Streamlit app)
