@@ -49,12 +49,14 @@ jobs:
       - name: Deploy Cloud Function (daily updater)
         run: |
           gcloud functions deploy finnhub-daily-updater \
-            --gen2 --region=${{ secrets.GCP_REGION }} --runtime=python311 \
+            --gen2 --region ${{ secrets.GCP_REGION }} --runtime=python311 \
             --source=. \
             --entry-point=run_update \
             --trigger-http --allow-unauthenticated \
+            --service-account ${{ secrets.FN_SA_EMAIL }} \
             --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
             --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest
+
 
       # Create/Update Scheduler job to call the function daily 01:00 UTC
       - name: Ensure Scheduler job
