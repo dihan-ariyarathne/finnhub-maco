@@ -39,7 +39,7 @@ jobs:
             --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
             --region ${{ secrets.GCP_REGION }} \
             --allow-unauthenticated \
-            --service-account ${{ secrets.RUN_SA_EMAIL }} \  # runtime SA with secret+GCS access
+            --service-account ${{ secrets.RUN_SA_EMAIL }} \
             --set-env-vars GCS_BUCKET=${{ secrets.GCS_BUCKET }} \
             --set-secrets FINNHUB_API_KEY=${{ secrets.FINNHUB_SECRET_NAME }}:latest \
             --min-instances=0 --max-instances=3 --concurrency=10 --memory=1Gi --cpu=1 --timeout=900
