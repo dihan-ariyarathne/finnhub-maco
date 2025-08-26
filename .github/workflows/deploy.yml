@@ -62,16 +62,31 @@ jobs:
       - name: Ensure Scheduler job
         shell: bash
         run: |
-          FN_URL=$(gcloud functions describe finnhub-daily-updater --region=${{ secrets.GCP_REGION }} --format="value(serviceConfig.uri)")
-          if gcloud scheduler jobs describe finnhub-daily >/dev/null 2>&1; then
-            gcloud scheduler jobs update http finnhub-daily \
-              --schedule="0 1 * * *" --time-zone="UTC" \
-              --uri="$FN_URL" --http-method=GET
+          # get the public URL of the Gen2 function (HTTP trigger)
+          FN_URL=$(gcloud functions describe finnhub-daily-updater \
+            --region=${{ secrets.GCP_REGION }} \
+            --format="value(serviceConfig.uri)")
+
+          LOCATION=${{ secrets.GCP_REGION }}       # use same region as your function (e.g., us-central1)
+          JOB=finnhub-daily                        # job name
+
+          # create or update the HTTP job that calls the function daily at 01:00 UTC
+          if gcloud scheduler jobs describe "$JOB" --location="$LOCATION" >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB" \
+              --location="$LOCATION" \
+              --schedule="0 1 * * *" \
+              --time-zone="UTC" \
+              --uri="$FN_URL" \
+              --http-method=GET
           else
-            gcloud scheduler jobs create http finnhub-daily \
-              --schedule="0 1 * * *" --time-zone="UTC" \
-              --uri="$FN_URL" --http-method=GET
+            gcloud scheduler jobs create http "$JOB" \
+              --location="$LOCATION" \
+              --schedule="0 1 * * *" \
+              --time-zone="UTC" \
+              --uri="$FN_URL" \
+              --http-method=GET
           fi
+
 
       # Print app URL
       - name: Show Cloud Run URL
