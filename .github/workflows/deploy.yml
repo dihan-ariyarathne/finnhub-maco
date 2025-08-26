@@ -30,7 +30,6 @@ jobs:
             --gcs-source-staging-dir=gs://${{ secrets.GCS_BUCKET }}/_cb-src \
             --gcs-log-dir=gs://${{ secrets.GCS_BUCKET }}/_cb-logs \
             --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
-            --file gcp/cloud_run.Dockerfile .
 
 
       # Deploy Streamlit to Cloud Run
