@@ -67,8 +67,8 @@ jobs:
             --region=${{ secrets.GCP_REGION }} \
             --format="value(serviceConfig.uri)")
 
-          LOCATION=${{ secrets.GCP_REGION }}       # use same region as your function (e.g., us-central1)
-          JOB=finnhub-daily                        # job name
+          LOCATION=${{ secrets.GCP_REGION }}
+          JOB=finnhub-daily                        
 
           # create or update the HTTP job that calls the function daily at 01:00 UTC
           if gcloud scheduler jobs describe "$JOB" --location="$LOCATION" >/dev/null 2>&1; then
