@@ -1,45 +1,89 @@
-# Appends latest candles into GCS CSVs (de-dup on timestamp).
-import os, time, pandas as pd
-from datetime import datetime, timedelta
-from google.cloud import storage
-from pipeline.config import SYMBOLS, RESOLUTION, DATA_DIR
-from pipeline.finnhub_client import candles
+# pipeline/update_daily.py
+# Purpose: append NEW rows daily using Finnhub ONLY, then write a small summary JSON.
 
-BUCKET = os.getenv("GCS_BUCKET")
+import os, pandas as pd, requests
+from datetime import datetime, timedelta, timezone
+from pipeline.config import SYMBOLS, SHORT_WINDOW, LONG_WINDOW
+from pipeline.gcs_io import read_csv, write_csv, write_summary
 
-def _gcs():
-    from google.cloud import storage
-    return storage.Client()
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")   # provided via Secret Manager in deploy
 
-def _read_csv(path):
-    b = _gcs().bucket(BUCKET).blob(path)
-    import io
-    return pd.read_csv(io.BytesIO(b.download_as_bytes()))
+def _epoch(dt: datetime) -> int:
+    """Convert datetime -> epoch seconds (UTC)."""
+    return int((dt - datetime(1970,1,1)).total_seconds())
 
-def _write_csv(df, path):
-    _gcs().bucket(BUCKET).blob(path).upload_from_string(df.to_csv(index=False), content_type="text/csv")
+def _fetch_finnhub_candles(symbol: str, start_dt: datetime, end_dt: datetime) -> pd.DataFrame:
+    """Call Finnhub /stock/candle (D) and return normalized DataFrame with time,o,h,l,c,v."""
+    if not FINNHUB_API_KEY:
+        raise RuntimeError("FINNHUB_API_KEY missing")
 
-def update_symbol(symbol: str):
-    path = f"{DATA_DIR}/{symbol}.csv"
-    try:
-        cur = _read_csv(path)
-        last_ts = pd.to_datetime(cur["time"]).max()
-        start = int((last_ts.to_pydatetime().replace(tzinfo=None) - timedelta(days=3)).timestamp())
-    except Exception:
-        cur = pd.DataFrame(); start = int((datetime.utcnow() - timedelta(days=365)).timestamp())
-    end = int(time.time())
-    data = candles(symbol, RESOLUTION, start, end)
-    if data.get("s") != "ok":
-        print(f"[WARN] No new data for {symbol}"); return
-    inc = pd.DataFrame({"t": data["t"], "o": data["o"], "h": data["h"], "l": data["l"], "c": data["c"], "v": data["v"]})
-    inc["time"] = pd.to_datetime(inc["t"], unit="s", utc=True).dt.tz_convert("UTC")
-    inc = inc.drop(columns=["t"]).sort_values("time")
-    out = pd.concat([cur, inc], ignore_index=True).drop_duplicates(subset=["time"]).sort_values("time")
-    _write_csv(out, path)
-    print(f"[OK] Updated {symbol}: +{len(inc)} rows, total={len(out)}")
+    url = "https://finnhub.io/api/v1/stock/candle"
+    params = {
+        "symbol": symbol,
+        "resolution": "D",
+        "from": _epoch(start_dt),
+        "to":   _epoch(end_dt),
+        "token": FINNHUB_API_KEY,
+    }
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    j = r.json()
+    if j.get("s") != "ok":
+        # Fail hard so we don't silently mix sources
+        raise RuntimeError(f"Finnhub error for {symbol}: {j}")
 
-def update_all():
-    for s in SYMBOLS: update_symbol(s)
+    df = pd.DataFrame({"time": j["t"], "o": j["o"], "h": j["h"], "l": j["l"], "c": j["c"], "v": j["v"]})
+    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True).dt.tz_localize(None)
+    return df[["time","o","h","l","c","v"]]
 
-if __name__ == "__main__":
-    update_all()
+def _forecast_next_close(df: pd.DataFrame):
+    """Simple next-close forecast: last short SMA value (for display)."""
+    if df.empty: return None
+    s = df["c"].rolling(SHORT_WINDOW).mean().iloc[-1]
+    return float(s) if pd.notna(s) else None
+
+def update_symbol(symbol: str) -> int:
+    """Append new rows for one symbol using FINNHUB ONLY. Return #rows appended."""
+    existing = read_csv(symbol)                                    # read current CSV from GCS
+    last_ts = existing["time"].max() if not existing.empty else None
+
+    # compute fetch window [last+1day .. now+1day] to include today if available
+    start_dt = (last_ts + timedelta(days=1)) if last_ts is not None else datetime(2000,1,1)
+    end_dt = datetime.utcnow().date() + timedelta(days=1)
+
+    # fetch candles strictly from Finnhub
+    new_df = _fetch_finnhub_candles(symbol, start_dt, datetime.combine(end_dt, datetime.min.time()))
+
+    if new_df.empty:
+        print(f"[{symbol}] no new rows from Finnhub")
+        return 0
+
+    all_df = pd.concat([existing, new_df], ignore_index=True)
+    all_df = all_df.drop_duplicates(subset=["time"]).sort_values("time")
+
+    write_csv(symbol, all_df)                                      # write merged CSV back to GCS
+
+    # write a tiny summary JSON for the dashboard
+    last_close = float(all_df["c"].iloc[-1])
+    next_close = _forecast_next_close(all_df)
+    write_summary(symbol, {
+        "symbol": symbol,
+        "last_close": last_close,
+        "next_close": next_close,
+        "asof": datetime.now(timezone.utc).isoformat()
+    })
+
+    appended = len(all_df) - len(existing)
+    print(f"[{symbol}] appended {appended} rows (total {len(all_df)})")
+    return appended
+
+def update_all(symbol: str | None = None):
+    """Entry point for Cloud Function: update one or all symbols (Finnhub only)."""
+    targets = [symbol] if symbol else SYMBOLS
+    updated = {}
+    for s in targets:
+        try:
+            updated[s] = update_symbol(s)
+        except Exception as e:
+            updated[s] = f"error: {e}"
+    return {"updated": updated}
