@@ -1,0 +1,44 @@
+name: One-time Historical Backfill (Yahoo -> GCS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Show who I am & project
+        run: |
+          gcloud config list
+          gcloud auth list
+
+      - name: Sanity: env + bucket access
+        env:
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+        run: |
+          echo "GCS_BUCKET=$GCS_BUCKET"
+          gsutil ls gs://$GCS_BUCKET || (echo "Bucket not accessible" && exit 1)
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run backfill (Yahoo only)
+        env:
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pipeline.backfill_historical
+          gsutil ls -r gs://${{ secrets.GCS_BUCKET }}/data/raw || true
