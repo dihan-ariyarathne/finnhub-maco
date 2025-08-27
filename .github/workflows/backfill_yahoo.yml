@@ -1,5 +1,6 @@
 name: One-time Historical Backfill (Yahoo -> GCS)
-on: { workflow_dispatch: {} }
+on: 
+  workflow_dispatch
 
 jobs:
   backfill:
