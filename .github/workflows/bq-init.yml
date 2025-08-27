@@ -12,15 +12,21 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
-      - name: Run init.sql with substitutions
+      - name: Run init.sql with substitutions (safe)
         env:
-          PROJECT: ${{ secrets.GCP_PROJECT_ID }}           # e.g. finnhubmacostrategy
-          DATASET: finnhub_data                       # or put in secrets
-          BUCKET: ${{ secrets.GCS_BUCKET }}                # e.g. finnhub-mac-data-130701
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          DATASET: finnhub_data                 # or put in secrets
+          BUCKET:  ${{ secrets.GCS_BUCKET }}
         run: |
-          # Replace @placeholders and run against BigQuery
-          bq query --use_legacy_sql=false "$(
-            sed -e "s/@project_id/$PROJECT/g" \
-                -e "s/@dataset/$DATASET/g" \
-                -e "s/@bucket/$BUCKET/g" bq/init.sql
-          )"
+          # 1) Render placeholders into a temp file
+          sed -e "s/@project_id/$PROJECT/g" \
+              -e "s/@dataset/$DATASET/g" \
+              -e "s/@bucket/$BUCKET/g" \
+              bq/init.sql > /tmp/init.sql
+
+          # 2) (optional) show first part for debugging
+          sed -n '1,60p' /tmp/init.sql
+
+          # 3) Run the SQL by piping the file to bq (avoids CLI flag parsing)
+          bq query --use_legacy_sql=false --quiet < /tmp/init.sql
+
