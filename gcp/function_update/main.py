@@ -1,10 +1,25 @@
-# HTTP Function: append daily bars, then publish MACO signals to BigQuery
+# Only define the HTTP handler. Do NOT run any code at import time.
+# Does: append daily bars (Finnhub) -> compute MACO -> write signals to BigQuery
+
 import json
-from pipeline.update_daily import update_all
-from pipeline.publish_signals import publish_all
 
 def run_update(request):
-    upd = update_all()        # append new daily data to CSVs
-    pub = publish_all()       # compute MACO + write to BigQuery
-    body = {"ok": True, "update": upd, "publish": pub}
-    return (json.dumps(body), 200, {"Content-Type": "application/json"})
+    # Import heavy deps INSIDE the handler so startup never crashes on import.
+    from pipeline.update_daily import update_all
+    try:
+        upd = update_all()              # append to gs://.../data/raw/*.csv
+    except Exception as e:
+        # Return JSON; container stays alive
+        return (json.dumps({"ok": False, "stage": "update_all", "error": str(e)}),
+                500, {"Content-Type": "application/json"})
+
+    # Optional: publish MACO signals to BigQuery (Python path)
+    try:
+        from pipeline.publish_signals import publish_all
+        pub = publish_all()             # write to <project>.<dataset>.maco_signals
+    except Exception as e:
+        return (json.dumps({"ok": False, "stage": "publish_all", "update": upd, "error": str(e)}),
+                500, {"Content-Type": "application/json"})
+
+    return (json.dumps({"ok": True, "update": upd, "publish": pub}),
+            200, {"Content-Type": "application/json"})

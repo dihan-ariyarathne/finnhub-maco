@@ -2,4 +2,7 @@ pandas
 numpy
 requests
 google-cloud-storage
-functions-framework==3.*
+functions-framework
+google-cloud-bigquery
+yfinance
+python-dateutil
