@@ -22,14 +22,14 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # Build the container (points to your Dockerfile path)
-      - name: Build image
+      # Build image (skip if no Dockerfile)
+      - name: Build image (skip if absent)
+        if: hashFiles('Dockerfile') != ''
         run: |
-          # Use your bucket for Cloud Build staging + logs
           gcloud builds submit \
             --gcs-source-staging-dir=gs://${{ secrets.GCS_BUCKET }}/_cb-src \
             --gcs-log-dir=gs://${{ secrets.GCS_BUCKET }}/_cb-logs \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app \
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/finnhub-mac-app .
 
 
       # Deploy Streamlit to Cloud Run
