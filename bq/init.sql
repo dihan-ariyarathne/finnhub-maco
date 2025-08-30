@@ -31,7 +31,7 @@ SELECT
   CAST(c AS FLOAT64) AS c,
   CAST(v AS FLOAT64) AS v,
   REGEXP_EXTRACT(_FILE_NAME, r'/data/raw/([^/]+)\.csv$') AS symbol
-FROM `YOUR_PROJECT.finnhub_data.prices_ext`
+FROM `@project_id.@dataset.prices_ext`
 WHERE time IS NOT NULL
   -- drop rows we failed to parse to a timestamp
   AND COALESCE(
