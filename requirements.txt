@@ -5,3 +5,4 @@ pandas
 requests
 yfinance
 python-dateutil
+pyarrow
