@@ -18,7 +18,7 @@ def candles(symbol: str, resolution: str, _from: int, _to: int):
     url = f"{BASE}/stock/candle"
     if "-USD" in symbol:
         url = f"{BASE}/crypto/candle"
-        sym = f"BINANCE:{symbol.replace('-','')}"  # e.g. BTC-USD -> BINANCE:BTCUSD
+        sym = f"BINANCE:{symbol.replace('-','')}T"  # e.g. BTC-USD -> BINANCE:BTCUSD
         params = {"symbol": sym, "resolution": resolution, "from": _from, "to": _to}
     else:
         params = {"symbol": symbol, "resolution": resolution, "from": _from, "to": _to}
