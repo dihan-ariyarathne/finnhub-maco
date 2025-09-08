@@ -1,25 +1,41 @@
-# Finnhub REST wrapper with retries (Windows safe).
-import os, time, requests
-API_KEY = os.getenv("FINNHUB_API_KEY")  # set via Secret Manager in cloud
+# pipeline/finnhub_client.py
+# Purpose: tiny Finnhub client with header auth + clear errors + self-test.
+
+import os
+import time
+import requests
 
 BASE = "https://finnhub.io/api/v1"
+TOKEN = os.getenv("FINNHUB_API_KEY")  # injected via Secret Manager or env
 
-def _get(url, params, retries=3, backoff=1.5):
-    params["token"] = API_KEY
-    for i in range(retries):
-        r = requests.get(url, params=params, timeout=20)
-        if r.status_code == 200:
-            return r.json()
-        time.sleep(backoff ** (i+1))
+# Optional symbol aliases (lets you keep BTC-USD in config)
+ALIAS = {
+    "BTC-USD": "BINANCE:BTCUSDT",
+}
+
+def _normalize_symbol(symbol: str) -> str:
+    """Map friendly symbols to Finnhub format (esp. crypto)."""
+    return ALIAS.get(symbol, symbol)
+
+def _req(path: str, params: dict):
+    """GET with token header + loud, helpful errors."""
+    if not TOKEN:
+        raise RuntimeError("FINNHUB_API_KEY is missing at runtime")
+    headers = {"X-Finnhub-Token": TOKEN}  # use header auth (cleaner than query)
+    r = requests.get(f"{BASE}{path}", params=params, headers=headers, timeout=20)
+    if r.status_code == 403:
+        # Print short body so you know *why* (invalid, plan, IP allowlist, etc.)
+        raise RuntimeError(f"Finnhub 403: {r.text[:200]}")
     r.raise_for_status()
+    return r.json()
 
-def candles(symbol: str, resolution: str, _from: int, _to: int):
-    """Fetch OHLC candles (UNIX seconds). Uses crypto endpoint for -USD symbols."""
-    url = f"{BASE}/stock/candle"
-    if "-USD" in symbol:
-        url = f"{BASE}/crypto/candle"
-        sym = f"BINANCE:{symbol.replace('-','')}T"  # e.g. BTC-USD -> BINANCE:BTCUSD
-        params = {"symbol": sym, "resolution": resolution, "from": _from, "to": _to}
-    else:
-        params = {"symbol": symbol, "resolution": resolution, "from": _from, "to": _to}
-    return _get(url, params)
+def candles(symbol: str, resolution: str, fr: int, to: int) -> dict:
+    """Fetch candles for stock or crypto, auto-route based on symbol format."""
+    symbol = _normalize_symbol(symbol)
+    if ":" in symbol:  # e.g., BINANCE:BTCUSDT means crypto
+        return _req("/crypto/candle", {"symbol": symbol, "resolution": resolution, "from": fr, "to": to})
+    return _req("/stock/candle", {"symbol": symbol, "resolution": resolution, "from": fr, "to": to})
+
+def self_test() -> dict:
+    """Quick health call to prove token works from inside Cloud Run."""
+    return _req("/quote", {"symbol": "AAPL"})

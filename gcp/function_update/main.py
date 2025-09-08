@@ -1,25 +1,30 @@
-# Only define the HTTP handler. Do NOT run any code at import time.
-# Does: append daily bars (Finnhub) -> compute MACO -> write signals to BigQuery
+# main.py
+# Purpose: Cloud Run entrypoint (HTTP or console). Calls update_all().
 
 import json
+from pipeline.update_daily import update_all
 
-def run_update(request):
-    # Import heavy deps INSIDE the handler so startup never crashes on import.
-    from pipeline.update_daily import update_all
-    try:
-        upd = update_all()              # append to gs://.../data/raw/*.csv
-    except Exception as e:
-        # Return JSON; container stays alive
-        return (json.dumps({"ok": False, "stage": "update_all", "error": str(e)}),
-                500, {"Content-Type": "application/json"})
+def run_once():
+    """CLI entry; prints JSON to stdout."""
+    print(json.dumps({"ok": True, "update": update_all()}, default=str))
 
-    # Optional: publish MACO signals to BigQuery (Python path)
-    try:
-        from pipeline.publish_signals import publish_all
-        pub = publish_all()             # write to <project>.<dataset>.maco_signals
-    except Exception as e:
-        return (json.dumps({"ok": False, "stage": "publish_all", "update": upd, "error": str(e)}),
-                500, {"Content-Type": "application/json"})
+# If deployed as a simple HTTP service (Functions Framework / Flask),
+# you can optionally expose an HTTP handler:
+try:
+    # Optional: only if functions-framework installed
+    from flask import Flask, jsonify
+    app = Flask(__name__)
 
-    return (json.dumps({"ok": True, "update": upd, "publish": pub}),
-            200, {"Content-Type": "application/json"})
+    @app.get("/")
+    def root():
+        try:
+            res = update_all()
+            return jsonify({"ok": True, "update": res}), 200
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 502
+except Exception:
+    # If Flask not installed, ignore – CLI mode still works.
+    pass
+
+if __name__ == "__main__":
+    run_once()
